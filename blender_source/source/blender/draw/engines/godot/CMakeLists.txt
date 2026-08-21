@@ -1,6 +1,8 @@
 set(SRC
   godot_engine.cc
   godot_engine.hh
+  blender_godot_bridge.cc
+  blender_godot_bridge.hh
 )
 
 set(INC
