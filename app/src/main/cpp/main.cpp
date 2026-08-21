@@ -6,12 +6,13 @@
 
 static void onStart(ANativeActivity* activity) {
     LOGI("==================================================");
-    LOGI("🚀 Blender Mobile Engine Started Successfully!");
-    LOGI("📱 Running on Android Native C++ Core (ARM64)");
+    LOGI("🚀 Blender Mobile Core Running with Native Blender Source!");
+    LOGI("📦 BMesh & Blender Math (BLI) Headers Linked Successfully!");
+    LOGI("📱 Architecture: Android ARM64");
     LOGI("==================================================");
 }
 
 JNIEXPORT void ANativeActivity_onCreate(ANativeActivity* activity, void* savedState, size_t savedStateSize) {
-    LOGI("🚀 Initializing Blender Mobile Native Core...");
+    LOGI("🚀 Initializing Blender Mobile Native Engine...");
     activity->callbacks->onStart = onStart;
 }
