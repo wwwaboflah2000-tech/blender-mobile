@@ -1,83 +1,89 @@
 #include <android/log.h>
 #include <android/native_activity.h>
 #include <android/native_window.h>
-#include <android/input.h>
+#include <EGL/egl.h>
+#include <GLES3/gl3.h>
+#include <thread>
+#include <atomic>
 
-#define LOG_TAG "BlenderGHOST"
+#define LOG_TAG "BlenderMobile"
 #define LOGI(...) __android_log_print(ANDROID_LOG_INFO, LOG_TAG, __VA_ARGS__)
 
-/* هيكل إدارة نافذة ومدخلات بلندر على الأندرويد */
-struct BlenderAndroidApp {
+struct AppContext {
     ANativeWindow* window = nullptr;
-    bool is_running = false;
+    EGLDisplay display = EGL_NO_DISPLAY;
+    EGLSurface surface = EGL_NO_SURFACE;
+    EGLContext context = EGL_NO_CONTEXT;
+    std::atomic<bool> running{false};
+    std::thread render_thread;
 };
 
-static BlenderAndroidApp g_app;
+static AppContext g_ctx;
 
-/* دالة معالجة مدخلات الماوس والكيبورد بالكامل */
-static int32_t onInputEvent(struct android_app* app, AInputEvent* event) {
-    int32_t event_type = AInputEvent_getType(event);
+// حلقة الرسم اللحظية (Render Loop - 60 FPS)
+void renderLoop() {
+    LOGI("🎨 Starting Blender Viewport Render Loop...");
 
-    // 1. معالجة أحداث الكيبورد واختصارات بلندر (G, R, S, E, Tab, Ctrl+Z)
-    if (event_type == AINPUT_EVENT_TYPE_KEY) {
-        int32_t action = AKeyEvent_getAction(event);
-        int32_t key_code = AKeyEvent_getKeyCode(event);
-        
-        if (action == AKEY_EVENT_ACTION_DOWN) {
-            LOGI("⌨️ Keyboard Key Pressed -> Forwarding to Blender GHOST: KeyCode %d", key_code);
-            // إرسال كود الزر مباشرة إلى مصفوفة أحداث بلندر
-        }
-        return 1;
+    // 1. إعداد واجهة EGL للرسم على الشاشة
+    g_ctx.display = eglGetDisplay(EGL_DEFAULT_DISPLAY);
+    eglInitialize(g_ctx.display, nullptr, nullptr);
+
+    const EGLint attribs[] = {
+        EGL_RENDERABLE_TYPE, EGL_OPENGL_ES3_BIT,
+        EGL_SURFACE_TYPE, EGL_WINDOW_BIT,
+        EGL_BLUE_SIZE, 8,
+        EGL_GREEN_SIZE, 8,
+        EGL_RED_SIZE, 8,
+        EGL_DEPTH_SIZE, 24,
+        EGL_NONE
+    };
+
+    EGLConfig config;
+    EGLint numConfigs;
+    eglChooseConfig(g_ctx.display, attribs, &config, 1, &numConfigs);
+
+    EGLint contextAttribs[] = { EGL_CONTEXT_CLIENT_VERSION, 3, EGL_NONE };
+    g_ctx.context = eglCreateContext(g_ctx.display, config, EGL_NO_CONTEXT, contextAttribs);
+    g_ctx.surface = eglCreateWindowSurface(g_ctx.display, config, g_ctx.window, nullptr);
+
+    eglMakeCurrent(g_ctx.display, g_ctx.surface, g_ctx.surface, g_ctx.context);
+
+    // 2. حلقة الرسم المستمرة
+    while (g_ctx.running) {
+        // تلوين مساحة العمل بلون واجهة بلندر الداكنة (Blender Dark Charcoal)
+        glClearColor(0.18f, 0.18f, 0.18f, 1.0f);
+        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+
+        // هنا يتم تصدير الفريم للشاشة
+        eglSwapBuffers(g_ctx.display, g_ctx.surface);
     }
 
-    // 2. معالجة حركة الماوس، النقر، وعجلة التكبير (Scroll Wheel)
-    if (event_type == AINPUT_EVENT_TYPE_MOTION) {
-        int32_t action = AMotionEvent_getAction(event);
-        float x = AMotionEvent_getX(event, 0);
-        float y = AMotionEvent_getY(event, 0);
-
-        switch (action & AMOTION_EVENT_ACTION_MASK) {
-            case AMOTION_EVENT_ACTION_MOVE:
-                // حركة مؤشر الماوس
-                break;
-            case AMOTION_EVENT_ACTION_DOWN:
-                LOGI("🖱️ Mouse Click -> Position: (%.1f, %.1f)", x, y);
-                break;
-            case AMOTION_EVENT_ACTION_SCROLL:
-                // عجلة الماوس (Zoom In / Out)
-                float scroll_val = AMotionEvent_getAxisValue(event, AMOTION_EVENT_AXIS_VSCROLL, 0);
-                LOGI("🖱️ Mouse Scroll Wheel -> Zoom Delta: %.2f", scroll_val);
-                break;
-        }
-        return 1;
-    }
-
-    return 0;
+    // تنظيف الموارد عند الإغلاق
+    eglMakeCurrent(g_ctx.display, EGL_NO_SURFACE, EGL_NO_SURFACE, EGL_NO_CONTEXT);
+    eglDestroyContext(g_ctx.display, g_ctx.context);
+    eglDestroySurface(g_ctx.display, g_ctx.surface);
+    eglTerminate(g_ctx.display);
+    LOGI("Render Loop Terminated cleanly.");
 }
 
-/* دالة إنشاء وتجهيز نافذة العرض للرندر */
 static void onNativeWindowCreated(ANativeActivity* activity, ANativeWindow* window) {
-    LOGI("🖥️ Android Native Window Created Successfully!");
-    g_app.window = window;
-    
-    int32_t width = ANativeWindow_getWidth(window);
-    int32_t height = ANativeWindow_getHeight(window);
-    LOGI("📱 Surface Resolution: %d x %d (Connecting to Godot Mobile Vulkan)", width, height);
+    LOGI("🖥️ Android Window Created. Activating 3D Viewport...");
+    g_ctx.window = window;
+    g_ctx.running = true;
+    g_ctx.render_thread = std::thread(renderLoop);
 }
 
-/* دالة تدمير النافذة عند إغلاق التطبيق */
 static void onNativeWindowDestroyed(ANativeActivity* activity, ANativeWindow* window) {
-    LOGI("Closing Blender Native Window...");
-    g_app.window = nullptr;
+    LOGI("Closing Android Window...");
+    g_ctx.running = false;
+    if (g_ctx.render_thread.joinable()) {
+        g_ctx.render_thread.join();
+    }
+    g_ctx.window = nullptr;
 }
 
-/* نقطة انطلاق التطبيق الرسمية للأندرويد */
 JNIEXPORT void ANativeActivity_onCreate(ANativeActivity* activity, void* savedState, size_t savedStateSize) {
-    LOGI("==================================================");
-    LOGI("🚀 Blender Mobile GHOST Engine Initialized!");
-    LOGI("🖱️ Full Mouse & Keyboard Hardware Support: ACTIVE");
-    LOGI("==================================================");
-
+    LOGI("🚀 Blender Mobile Engine Started!");
     activity->callbacks->onNativeWindowCreated = onNativeWindowCreated;
     activity->callbacks->onNativeWindowDestroyed = onNativeWindowDestroyed;
 }

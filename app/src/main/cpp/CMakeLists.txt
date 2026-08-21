@@ -18,10 +18,12 @@ add_library(blender_core SHARED
 
 find_library(log-lib log)
 find_library(android-lib android)
-find_library(vulkan-lib vulkan)
+find_library(egl-lib EGL)
+find_library(gles-lib GLESv3)
 
 target_link_libraries(blender_core
     ${log-lib}
     ${android-lib}
-    ${vulkan-lib}
+    ${egl-lib}
+    ${gles-lib}
 )
