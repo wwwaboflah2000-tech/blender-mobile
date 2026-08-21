@@ -3,6 +3,8 @@ set(SRC
   godot_engine.hh
   blender_godot_bridge.cc
   blender_godot_bridge.hh
+  godot_viewport_controller.cc
+  godot_viewport_controller.hh
 )
 
 set(INC
